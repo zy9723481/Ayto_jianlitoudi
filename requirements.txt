@@ -1,0 +1,9 @@
+DrissionPage>=4.0.5.8
+requests==2.32.3
+openai==1.30.0
+PyPDF2==3.0.1
+Pillow==10.4.0
+python-docx>=0.8.11
+Flask>=3.0.0
+bcrypt>=4.1.0
+pymysql>=1.1.0
