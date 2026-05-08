@@ -23,6 +23,7 @@ __pycache__/
 build/
 dist/
 *.spec
+*.exe
 
 # IDE
 .vscode/

@@ -562,6 +562,7 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
         job_title = job_info.get('title', '')
         company = job_info.get('company', '')
         job_url = job_info.get('url')
+        delivery_tab = None
 
         try:
             self.log(f"       >> 打开智联岗位页面...")
@@ -596,6 +597,7 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
             # 步骤2: 优先检测直接投递成功（智联最常见：点击后页面展示"投递成功"）
             if self._check_delivery_success(delivery_tab):
                 self._mark_delivered(job_info, job_title, company, job_url)
+                self._cleanup_after_delivery(delivery_tab, current_page)
                 return True
 
             # 步骤3: 检查是否有确认弹窗（如"确定投递该职位"）
@@ -604,6 +606,7 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
                 time.sleep(1.5)
                 if self._check_delivery_success(delivery_tab):
                     self._mark_delivered(job_info, job_title, company, job_url)
+                    self._cleanup_after_delivery(delivery_tab, current_page)
                     return True
 
             # 步骤4: 检查是否有聊天弹窗（少数岗位需要先沟通）
@@ -616,11 +619,13 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
                     time.sleep(1.5)
                     if self._check_delivery_success(delivery_tab):
                         self._mark_delivered(job_info, job_title, company, job_url)
+                        self._cleanup_after_delivery(delivery_tab, current_page)
                         return True
                     # 发送了消息但无明确成功提示，也视为投递成功
                     if self._no_error_message(delivery_tab):
                         self.log(f"       >> 消息已发送，视为投递成功")
                         self._mark_delivered(job_info, job_title, company, job_url)
+                        self._cleanup_after_delivery(delivery_tab, current_page)
                         return True
                 else:
                     self.log(f"       >> 聊天发送失败")
@@ -631,6 +636,7 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
             if self._no_error_message(delivery_tab):
                 self.log(f"       >> 无错误提示，视为投递成功")
                 self._mark_delivered(job_info, job_title, company, job_url)
+                self._cleanup_after_delivery(delivery_tab, current_page)
                 return True
 
             self.log(f"       >> 无法确认投递状态，视为失败")
@@ -642,14 +648,34 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
             self.log_delivery(job_info, success=False, reason=str(e))
             return False
         finally:
-            # 投递完成后关闭非搜索页的页签，只保留 zhaopin.com/sou 相关页签
+            # 投递失败时兜底关闭投递页签和闲置页签
             try:
+                if delivery_tab:
+                    try:
+                        delivery_tab.close()
+                    except:
+                        pass
                 time.sleep(0.3)
                 self._close_non_search_tabs(current_page)
             except Exception as e:
                 self.log(f"       >> 关闭页签异常: {e}")
 
     # ── 页签清理 ──
+
+    def _cleanup_after_delivery(self, delivery_tab, page):
+        """投递成功后：先关闭投递页签，再清理所有闲置的非搜索页签"""
+        try:
+            if delivery_tab:
+                delivery_tab.close()
+                self.log(f"       >> 已关闭投递页签")
+        except Exception as e:
+            self.log(f"       >> 关闭投递页签异常: {e}")
+
+        try:
+            time.sleep(0.3)
+            self._close_non_search_tabs(page)
+        except Exception as e:
+            self.log(f"       >> 清理闲置页签异常: {e}")
 
     def _close_non_search_tabs(self, page, max_retries=5):
         """循环关闭所有非搜索页的页签，直到至少保留一个含 zhaopin.com/sou 的页签"""
