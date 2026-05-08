@@ -301,7 +301,10 @@ class JobDeliveryDP(BaseDeliveryDP):
         self.log(f"       >> 当前投递数: {self.delivery_count}/{self.max_delivery}")
 
         if self.delivery_count >= self.max_delivery:
-            self.log(f"       >> 已达到最大投递数")
+            self.log(f"       >> 已达到单次最大投递数")
+            return False
+
+        if self.check_daily_limit():
             return False
 
         current_page = page or self.page

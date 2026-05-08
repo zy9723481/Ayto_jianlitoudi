@@ -11,6 +11,10 @@ import bcrypt
 from database import init_db, get_db, get_machine_fingerprint, record_delivery, get_today_delivery_stats
 from card_system import CARD_TYPES, generate_card_keys, verify_and_activate_card, check_user_license, get_expiry_text
 from config import MAX_DELIVERY_COUNT, GREETING_MESSAGE, COOKIE_FILE, ANALYSIS_FILE, CITY_MAP
+try:
+    from config import MAX_DAILY_DELIVERY
+except ImportError:
+    MAX_DAILY_DELIVERY = 200
 
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.log")
 DELIVERY_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "delivery_config.json")
@@ -160,6 +164,11 @@ class App(tk.Tk):
         self.analysis_result = None
         self.current_job_index = 0
         self.matched_jobs = []
+        self.daily_state = None
+        self.boss_started = False
+        self.zhilian_started = False
+        self.boss_completed = False
+        self.zhilian_completed = False
 
         # Setup styles
         self._setup_styles()
@@ -1136,6 +1145,20 @@ class MainFrame(tk.Frame):
                                        bd=0, width=6, highlightthickness=1, highlightbackground=c['bg4'],
                                        state='disabled')
         self.max_time_entry.pack(side=tk.LEFT)
+
+        # 每日上限
+        row4b = tk.Frame(cfg_scroll, bg=c['bg2'])
+        row4b.pack(fill=tk.X, pady=2)
+
+        tk.Label(row4b, text='每日上限', font=('Microsoft YaHei UI', 9), fg=c['text2'],
+                 bg=c['bg2'], width=10, anchor='w').pack(side=tk.LEFT)
+        self.max_daily_var = tk.StringVar(value=str(MAX_DAILY_DELIVERY))
+        self.max_daily_entry = tk.Entry(row4b, textvariable=self.max_daily_var, font=('Microsoft YaHei UI', 9),
+                                        bg=c['bg3'], fg=c['text'], insertbackground=c['text'], relief='flat',
+                                        bd=0, width=6, highlightthickness=1, highlightbackground=c['bg4'])
+        self.max_daily_entry.pack(side=tk.LEFT)
+        tk.Label(row4b, text=' (0=不限制)', font=('Microsoft YaHei UI', 8), fg=c['text3'],
+                 bg=c['bg2']).pack(side=tk.LEFT, padx=(4, 0))
 
         # City
         row5 = tk.Frame(cfg_scroll, bg=c['bg2'])
@@ -2125,6 +2148,7 @@ class MainFrame(tk.Frame):
             'reprocess': self.reprocess_var.get(),
             'boss_platform': self.boss_platform_var.get(),
             'zhilian_platform': self.zhilian_platform_var.get(),
+            'max_daily': self.max_daily_var.get(),
         }
         try:
             with open(DELIVERY_CONFIG_FILE, 'w', encoding='utf-8') as f:
@@ -2159,6 +2183,8 @@ class MainFrame(tk.Frame):
                 self.boss_platform_var.set(config['boss_platform'])
             if 'zhilian_platform' in config:
                 self.zhilian_platform_var.set(config['zhilian_platform'])
+            if 'max_daily' in config:
+                self.max_daily_var.set(config['max_daily'])
         except:
             pass
 
@@ -2340,6 +2366,26 @@ class MainFrame(tk.Frame):
         self.zhilian_session_count = 0
         self.boss_count_label.config(text='BOSS: 0')
         self.zhilian_count_label.config(text='智联: 0')
+
+        # 创建共享每日计数器（线程安全）
+        max_daily = int(self.max_daily_var.get() or 0)
+        start_count = 0
+        if self.app.user_id and max_daily > 0:
+            stats = get_today_delivery_stats(self.app.user_id)
+            start_count = stats['total']
+        self.app.daily_state = {
+            'start_count': start_count,
+            'session_count': 0,
+            'max_daily': max_daily,
+            'lock': threading.Lock()
+        }
+
+        # 追踪每个平台的启动和完成状态
+        self.app.boss_started = ('boss' in selected)
+        self.app.zhilian_started = ('zhilian' in selected)
+        self.app.boss_completed = False
+        self.app.zhilian_completed = False
+
         self._refresh_today_stats()
 
         self.app.matched_jobs = []
@@ -2405,6 +2451,8 @@ class MainFrame(tk.Frame):
             delivery.stop_mode = stop_mode
             delivery.max_time_seconds = max_time * 60
             delivery.reprocess_skipped = self.reprocess_var.get()
+            delivery.daily_state = self.app.daily_state
+            delivery.user_id = self.app.user_id
 
             title_keywords = [k.strip() for k in self.title_keywords_var.get().split(',') if k.strip()]
             threshold = int(self.threshold_var.get() or 60)
@@ -2504,6 +2552,10 @@ class MainFrame(tk.Frame):
                         job_info.get('title', '未知'),
                         match_score, True, platform
                     )
+                # 递增共享每日计数器
+                if self.app.daily_state:
+                    with self.app.daily_state['lock']:
+                        self.app.daily_state['session_count'] += 1
                 # 更新UI：本次计数 + 今日统计
                 cnt = delivery.delivery_count
                 self.after(0, lambda c=cnt, p=platform: self._update_delivery_stats(p, c))
@@ -2606,16 +2658,15 @@ class MainFrame(tk.Frame):
         pname = 'BOSS' if platform == 'boss' else '智联'
         self.log_msg(f'[{pname}] 投递完成')
 
-        # 检查是否所有平台都完成了
+        # 标记当前平台已完成
         if platform == 'boss':
-            boss_done = True
+            self.app.boss_completed = True
         else:
-            boss_done = not (self.app.delivery and self.app.delivery.running)
+            self.app.zhilian_completed = True
 
-        if platform == 'zhilian':
-            zhilian_done = True
-        else:
-            zhilian_done = not (self.app.zhilian_delivery and self.app.zhilian_delivery.running)
+        # 判断所有启动的平台是否都已完成
+        boss_done = (not self.app.boss_started) or self.app.boss_completed
+        zhilian_done = (not self.app.zhilian_started) or self.app.zhilian_completed
 
         # 智联完成后清理多余页签
         if platform == 'zhilian':

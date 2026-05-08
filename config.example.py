@@ -22,6 +22,7 @@ BOSS_LOGIN_URL = "https://www.zhipin.com/web/user/?ka=header-login"
 BOSS_RESUME_URL = "https://www.zhipin.com/web/geek/resume"
 
 MAX_DELIVERY_COUNT = 100
+MAX_DAILY_DELIVERY = 200
 GREETING_MESSAGE = "您好，我对贵公司的岗位很感兴趣，希望能有机会进一步沟通，谢谢！"
 
 CITY_CODE = "101010100"

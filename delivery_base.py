@@ -40,6 +40,8 @@ class BaseDeliveryDP:
         self.max_time_seconds = 3600
         self.start_time = None
         self.reprocess_skipped = False
+        self.daily_state = None
+        self.user_id = None
 
     # ═══════════════════════════════════════════════════════
     #  存储管理
@@ -105,18 +107,38 @@ class BaseDeliveryDP:
     # ═══════════════════════════════════════════════════════
 
     def should_stop(self) -> bool:
+        # 1. 每日上限检查（两个平台共享，优先判断）
+        if self.daily_state and self.daily_state.get('max_daily', 0) > 0:
+            with self.daily_state['lock']:
+                total_today = self.daily_state['start_count'] + self.daily_state['session_count']
+            if total_today >= self.daily_state['max_daily']:
+                self.log(f"已达到每日投递上限: {self.daily_state['max_daily']}")
+                return True
+
+        # 2. 单次数量/时间上限检查
         if self.stop_mode == "count":
             if self.delivery_count >= self.max_delivery:
-                self.log(f"已达到最大投递数: {self.max_delivery}")
+                self.log(f"已达到单次最大投递数: {self.max_delivery}")
                 return True
         else:
-            elapsed = time.time() - self.start_time
-            if elapsed >= self.max_time_seconds:
-                self.log(f"已达到最大运行时间: {self.max_time_seconds // 60}分钟")
+            if self.start_time:
+                elapsed = time.time() - self.start_time
+                if elapsed >= self.max_time_seconds:
+                    self.log(f"已达到最大运行时间: {self.max_time_seconds // 60}分钟")
+                    return True
+                remaining = self.max_time_seconds - elapsed
+                if remaining > 0 and int(remaining) % 60 == 0:
+                    self.log(f"剩余时间: {int(remaining // 60)}分钟")
+        return False
+
+    def check_daily_limit(self) -> bool:
+        """投递前检查每日上限，返回 True 表示已达上限应停止"""
+        if self.daily_state and self.daily_state.get('max_daily', 0) > 0:
+            with self.daily_state['lock']:
+                total_today = self.daily_state['start_count'] + self.daily_state['session_count']
+            if total_today >= self.daily_state['max_daily']:
+                self.log(f"已达到每日投递上限: {self.daily_state['max_daily']}，跳过本次投递")
                 return True
-            remaining = self.max_time_seconds - elapsed
-            if remaining > 0 and int(remaining) % 60 == 0:
-                self.log(f"剩余时间: {int(remaining // 60)}分钟")
         return False
 
     def log(self, msg):
