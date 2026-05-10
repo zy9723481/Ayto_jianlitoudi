@@ -2594,63 +2594,22 @@ class MainFrame(tk.Frame):
         return True
 
     def _cleanup_zhilian_tabs(self, page):
-        """智联投递完成后，循环匹配直到保留 zhaopin.com/sou 搜索页签"""
+        """智联投递完成后，只保留第1个页签，关闭其余"""
         try:
             if not page:
                 return
-            max_retries = 5
-            for attempt in range(max_retries):
-                all_tabs = list(page.tabs) if hasattr(page, 'tabs') else []
-                if not all_tabs:
-                    return
-
-                search_tabs = []
-                other_tabs = []
-                for t in all_tabs:
-                    try:
-                        url = t.url or ''
-                        if 'zhaopin.com/sou' in url:
-                            search_tabs.append(t)
-                        else:
-                            other_tabs.append(t)
-                    except:
-                        other_tabs.append(t)
-
-                if search_tabs:
-                    closed = 0
-                    for t in other_tabs:
-                        try:
-                            t.close()
-                            closed += 1
-                        except:
-                            pass
-                    if closed > 0:
-                        self.log_msg(f'[智联] 清理页签: 保留 {len(search_tabs)} 个搜索页，关闭 {closed} 个 (第{attempt + 1}次)')
-                    return
-
-                # 没有搜索页：关闭多余页签后等待
-                if len(all_tabs) > 1:
-                    closed = 0
-                    for t in all_tabs[1:]:
-                        try:
-                            t.close()
-                            closed += 1
-                        except:
-                            pass
-                    if closed > 0:
-                        self.log_msg(f'[智联] 暂未找到搜索页，关闭 {closed} 个，等待加载... (第{attempt + 1}次)')
-
-                time.sleep(1.5)
-
-            # 最后兜底：保留第一个
             all_tabs = list(page.tabs) if hasattr(page, 'tabs') else []
-            if len(all_tabs) > 1:
-                for t in all_tabs[1:]:
-                    try:
-                        t.close()
-                    except:
-                        pass
-                self.log_msg(f'[智联] 最终清理: 保留第1个页签')
+            if len(all_tabs) <= 1:
+                return
+            closed = 0
+            for t in all_tabs[1:]:
+                try:
+                    t.close()
+                    closed += 1
+                except:
+                    pass
+            if closed > 0:
+                self.log_msg(f'[智联] 清理页签: 关闭 {closed} 个多余页签，保留主页面')
         except Exception as e:
             self.log_msg(f'[智联] 清理页签异常: {e}')
 
