@@ -536,12 +536,25 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
             self.log(f"       >> 获取智联详情失败: {e}")
             return None, None
         finally:
-            # 确保详情页签总是被关闭
+            # 确保详情页签总是被关闭，并恢复主页面焦点
             if new_tab:
                 try:
                     new_tab.close()
                 except:
                     pass
+            # 关闭后激活主页面（第一个含 zhaopin.com 的页签），避免 latest_tab 指向过期页签
+            try:
+                time.sleep(0.3)
+                all_tabs = list(current_page.tabs) if hasattr(current_page, 'tabs') else []
+                for t in all_tabs:
+                    try:
+                        if 'zhaopin.com' in (t.url or ''):
+                            current_page.activate_tab(t)
+                            break
+                    except:
+                        pass
+            except:
+                pass
 
     def deliver_job(self, job_info: Dict, resume_text: str = None,
                     custom_greeting: str = None, page=None) -> bool:
@@ -566,12 +579,6 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
         company = job_info.get('company', '')
         job_url = job_info.get('url')
         delivery_tab = None
-
-        # 记录最初的主页签，投递完成后只保留它
-        try:
-            main_tab = current_page.latest_tab
-        except:
-            main_tab = None
 
         try:
             self.log(f"       >> 打开智联岗位页面...")
@@ -606,7 +613,7 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
             # 步骤2: 优先检测直接投递成功（智联最常见：点击后页面展示"投递成功"）
             if self._check_delivery_success(delivery_tab):
                 self._mark_delivered(job_info, job_title, company, job_url)
-                self._cleanup_after_delivery(current_page, main_tab)
+                self._cleanup_after_delivery(current_page)
                 return True
 
             # 步骤3: 检查是否有确认弹窗（如"确定投递该职位"）
@@ -615,7 +622,7 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
                 time.sleep(1.5)
                 if self._check_delivery_success(delivery_tab):
                     self._mark_delivered(job_info, job_title, company, job_url)
-                    self._cleanup_after_delivery(current_page, main_tab)
+                    self._cleanup_after_delivery(current_page)
                     return True
 
             # 步骤4: 检查是否有聊天弹窗（少数岗位需要先沟通）
@@ -628,13 +635,13 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
                     time.sleep(1.5)
                     if self._check_delivery_success(delivery_tab):
                         self._mark_delivered(job_info, job_title, company, job_url)
-                        self._cleanup_after_delivery(current_page, main_tab)
+                        self._cleanup_after_delivery(current_page)
                         return True
                     # 发送了消息但无明确成功提示，也视为投递成功
                     if self._no_error_message(delivery_tab):
                         self.log(f"       >> 消息已发送，视为投递成功")
                         self._mark_delivered(job_info, job_title, company, job_url)
-                        self._cleanup_after_delivery(current_page, main_tab)
+                        self._cleanup_after_delivery(current_page)
                         return True
                 else:
                     self.log(f"       >> 聊天发送失败")
@@ -645,7 +652,7 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
             if self._no_error_message(delivery_tab):
                 self.log(f"       >> 无错误提示，视为投递成功")
                 self._mark_delivered(job_info, job_title, company, job_url)
-                self._cleanup_after_delivery(current_page, main_tab)
+                self._cleanup_after_delivery(current_page)
                 return True
 
             self.log(f"       >> 无法确认投递状态，视为失败")
@@ -660,62 +667,45 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
             # 投递失败时兜底：只保留主页面，关闭所有其他页签
             try:
                 time.sleep(0.3)
-                self._close_all_except_main(current_page, main_tab)
+                self._close_extra_tabs(current_page)
             except Exception as e:
                 self.log(f"       >> 关闭页签异常: {e}")
 
     # ── 页签清理 ──
 
-    def _cleanup_after_delivery(self, page, main_tab=None):
+    def _cleanup_after_delivery(self, page):
         """投递成功后：关闭所有页签，只保留主页面"""
         try:
             time.sleep(0.3)
-            self._close_all_except_main(page, main_tab)
+            self._close_extra_tabs(page)
         except Exception as e:
             self.log(f"       >> 清理闲置页签异常: {e}")
 
-    def _close_all_except_main(self, page, main_tab=None):
-        """关闭所有页签，只保留主页面（main_tab）。
-        通过 tab_id 精确匹配要保留的页签，避免 URL 匹配不可靠的问题。
+    def _close_extra_tabs(self, page):
+        """关闭多余页签，只保留智联主页面。
+        优先保留第一个含 zhaopin.com 的页签，兜底保留 tabs[0]（最老的页签）。
         """
         try:
             all_tabs = list(page.tabs) if hasattr(page, 'tabs') else []
             if not all_tabs or len(all_tabs) <= 1:
                 return
 
-            # 获取要保留的页签ID
-            keep_id = None
-            if main_tab:
+            # 找到要保留的页签索引：优先第一个含 zhaopin.com 的页签
+            keep_idx = 0
+            for i, t in enumerate(all_tabs):
                 try:
-                    keep_id = main_tab.tab_id
+                    if 'zhaopin.com' in (t.url or ''):
+                        keep_idx = i
+                        break
                 except:
                     pass
 
-            # 确认保留的页签仍然存在
-            keep_exists = False
-            if keep_id:
-                for t in all_tabs:
-                    try:
-                        if t.tab_id == keep_id:
-                            keep_exists = True
-                            break
-                    except:
-                        pass
-
-            if not keep_exists:
-                # 主页面丢失，保留第一个页签作为兜底
-                self.log(f"       >> 主页面已关闭，保留第一个剩余页签")
-                try:
-                    keep_id = all_tabs[0].tab_id
-                except:
-                    keep_id = None
-
             # 关闭除保留页签外的所有页签
             closed = 0
-            for t in all_tabs:
+            for i, t in enumerate(all_tabs):
+                if i == keep_idx:
+                    continue
                 try:
-                    if keep_id and t.tab_id == keep_id:
-                        continue
                     t.close()
                     closed += 1
                 except:
