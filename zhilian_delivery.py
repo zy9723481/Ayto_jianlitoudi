@@ -719,8 +719,33 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
     # ── 验证处理 ──
 
     def _handle_verify_checkbox(self, tab=None) -> bool:
-        """检测并点击智联验证复选框 #verifyCheckbox，返回是否处理了验证"""
+        """检测并点击智联验证复选框 #verifyCheckbox。
+        优先通过监听 captcha.eo.gtimg.com 网络请求来触发，兜底直接查找元素。
+        """
         target = tab or self.page
+
+        # 方案1：网络监听 captcha.eo.gtimg.com 请求，请求到达时说明验证组件已加载
+        try:
+            target.listen.start('captcha.eo.gtimg.com')
+            result = target.listen.wait(timeout=4, fit_count=False)
+            if result:
+                self.log(f"       >> 检测到 captcha 验证请求，等待验证元素渲染...")
+                time.sleep(0.5)
+                cb = target.ele('#verifyCheckbox', timeout=2)
+                if cb:
+                    self.log(f"       >> 正在点击验证复选框...")
+                    cb.click()
+                    time.sleep(2)
+                    return True
+        except:
+            pass
+        finally:
+            try:
+                target.listen.stop()
+            except:
+                pass
+
+        # 方案2：兜底直接查找 #verifyCheckbox 元素
         try:
             cb = target.ele('#verifyCheckbox', timeout=0.5)
             if cb:
