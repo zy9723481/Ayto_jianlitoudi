@@ -536,18 +536,18 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
             self.log(f"       >> 获取智联详情失败: {e}")
             return None, None
         finally:
-            # 确保详情页签总是被关闭，并恢复主页面焦点
+            # 确保详情页签被关闭
             if new_tab:
                 try:
                     new_tab.close()
-                except:
-                    pass
-            # 关闭后激活主页面（tabs[0]），避免 latest_tab 指向过期页签
+                    self.log(f"       >> [详情] 已关闭详情页签")
+                except Exception as e:
+                    self.log(f"       >> [详情] 关闭详情页签异常: {e}")
+            # 兜底：确保只保留主页面 tabs[0]，关闭所有多余页签
+            # 防止因 close 静默失败导致孤儿页签累积
             try:
                 time.sleep(0.3)
-                all_tabs = list(current_page.tabs) if hasattr(current_page, 'tabs') else []
-                if all_tabs:
-                    current_page.activate_tab(all_tabs[0])
+                self._close_extra_tabs(current_page)
             except:
                 pass
 
@@ -679,23 +679,31 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
     def _close_extra_tabs(self, page):
         """关闭多余页签，始终保留 tabs[0]（最老的页签 = 主页面）"""
         try:
+            # 通过 browser 直接获取页签列表，确保拿到最新数据
             all_tabs = list(page.tabs) if hasattr(page, 'tabs') else []
-            if not all_tabs or len(all_tabs) <= 1:
+            total = len(all_tabs)
+            self.log(f"       >> [页签清理] 当前共 {total} 个页签")
+
+            if total <= 1:
                 return
 
-            # 始终保留 tabs[0]（主页面），关闭其余所有
-            closed = 0
-            for t in all_tabs[1:]:
+            # 打印每个页签URL用于诊断
+            for i, t in enumerate(all_tabs):
                 try:
-                    t.close()
-                    closed += 1
+                    self.log(f"       >>   [{i}] {(t.url or 'N/A')[:100]}")
                 except:
-                    pass
+                    self.log(f"       >>   [{i}] <无法读取URL>")
 
-            if closed > 0:
-                self.log(f"       >> 已关闭 {closed} 个多余页签，保留主页面 (tabs[0])")
+            # 使用 browser 级 close_tabs 批量关闭，比逐个 t.close() 更可靠
+            tabs_to_close = all_tabs[1:]
+            page.close_tabs(tabs_to_close)
+            time.sleep(0.3)
+
+            # 验证结果
+            remaining = list(page.tabs) if hasattr(page, 'tabs') else []
+            self.log(f"       >> [页签清理] 剩余 {len(remaining)} 个页签，已关闭 {total - len(remaining)} 个")
         except Exception as e:
-            self.log(f"       >> 清理页签异常: {e}")
+            self.log(f"       >> [页签清理] 异常: {e}")
 
     # ── 验证处理 ──
 
