@@ -542,17 +542,12 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
                     new_tab.close()
                 except:
                     pass
-            # 关闭后激活主页面（第一个含 zhaopin.com 的页签），避免 latest_tab 指向过期页签
+            # 关闭后激活主页面（tabs[0]），避免 latest_tab 指向过期页签
             try:
                 time.sleep(0.3)
                 all_tabs = list(current_page.tabs) if hasattr(current_page, 'tabs') else []
-                for t in all_tabs:
-                    try:
-                        if 'zhaopin.com' in (t.url or ''):
-                            current_page.activate_tab(t)
-                            break
-                    except:
-                        pass
+                if all_tabs:
+                    current_page.activate_tab(all_tabs[0])
             except:
                 pass
 
@@ -682,29 +677,15 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
             self.log(f"       >> 清理闲置页签异常: {e}")
 
     def _close_extra_tabs(self, page):
-        """关闭多余页签，只保留智联主页面。
-        优先保留第一个含 zhaopin.com 的页签，兜底保留 tabs[0]（最老的页签）。
-        """
+        """关闭多余页签，始终保留 tabs[0]（最老的页签 = 主页面）"""
         try:
             all_tabs = list(page.tabs) if hasattr(page, 'tabs') else []
             if not all_tabs or len(all_tabs) <= 1:
                 return
 
-            # 找到要保留的页签索引：优先第一个含 zhaopin.com 的页签
-            keep_idx = 0
-            for i, t in enumerate(all_tabs):
-                try:
-                    if 'zhaopin.com' in (t.url or ''):
-                        keep_idx = i
-                        break
-                except:
-                    pass
-
-            # 关闭除保留页签外的所有页签
+            # 始终保留 tabs[0]（主页面），关闭其余所有
             closed = 0
-            for i, t in enumerate(all_tabs):
-                if i == keep_idx:
-                    continue
+            for t in all_tabs[1:]:
                 try:
                     t.close()
                     closed += 1
@@ -712,7 +693,7 @@ class ZhilianDeliveryDP(BaseDeliveryDP):
                     pass
 
             if closed > 0:
-                self.log(f"       >> 已关闭 {closed} 个多余页签，保留主页面")
+                self.log(f"       >> 已关闭 {closed} 个多余页签，保留主页面 (tabs[0])")
         except Exception as e:
             self.log(f"       >> 清理页签异常: {e}")
 
