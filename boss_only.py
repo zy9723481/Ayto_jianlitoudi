@@ -938,7 +938,7 @@ class MainFrame(tk.Frame):
 
         # 今日总投递数
         self.today_total_label = tk.Label(stats_title_row, text='今日总投递: 0',
-                                          font=('Microsoft YaHei UI', 10, 'bold'),
+                                          font=('Microsoft YaHei UI', 12, 'bold'),
                                           fg=c['accent'], bg=c['bg2'])
         self.today_total_label.pack(side=tk.LEFT, padx=20)
 
@@ -2298,7 +2298,7 @@ class MainFrame(tk.Frame):
         if self.app.user_id:
             stats = get_today_delivery_stats(self.app.user_id)
             self.today_total_label.config(
-                text=f'今日总投递: {stats["total"]}  (BOSS: {stats["boss"]})'
+                text=f'今日总投递: {stats["total"]}'
             )
 
     def _collect_callback(self, job_info, match_score, job_detail):
@@ -2350,7 +2350,7 @@ class MainFrame(tk.Frame):
         if self.app.user_id:
             stats = get_today_delivery_stats(self.app.user_id)
             self.today_total_label.config(
-                text=f'今日总投递: {stats["total"]}  (BOSS: {stats["boss"]})'
+                text=f'今日总投递: {stats["total"]}'
             )
 
     def stop_delivery(self):
