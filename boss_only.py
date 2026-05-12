@@ -2329,14 +2329,13 @@ class MainFrame(tk.Frame):
 
         if is_auto:
             boss_session = self.boss_session_count
-            total_session = boss_session
 
             # 刷新今日统计
             self._refresh_today_stats()
             stats = get_today_delivery_stats(self.app.user_id) if self.app.user_id else {'total': 0}
 
-            self.status_text.config(text=f'全部完成! 本次:{total_session}  今日总:{stats["total"]}')
-            self.log_msg(f'全部投递完成! 本次:BOSS:{boss_session} = {total_session} | 今日总:{stats["total"]}')
+            self.status_text.config(text=f'全部完成! 本次:{boss_session}  今日总:{stats["total"]}')
+            self.log_msg(f'全部投递完成! 本次:{boss_session} | 今日总:{stats["total"]}')
         else:
             if self.app.matched_jobs:
                 self.status_text.config(text=f'找到 {len(self.app.matched_jobs)} 个匹配岗位')
